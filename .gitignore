@@ -10,7 +10,8 @@ __pycache__/
 /data/
 /results/
 /results_archive/
-/fixtures/
+/fixtures/*
+!/fixtures/eval_tests_small.json
 *.json.log
 /tmp/
 *.db
