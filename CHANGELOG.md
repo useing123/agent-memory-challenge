@@ -797,3 +797,9 @@ Session 3: "I just joined Notion as PM"
 - **New Dataset:** Switched to the corrected `longmemeval-cleaned` dataset and created a new data processing pipeline.
 - **New Eval Script:** Created `run_eval_new.py` to handle the multi-session format of the new dataset and to support proper test isolation using `question_id`.
 - **Next Steps:** The service is now ready for a full evaluation run to benchmark the performance of the (fixed) alpha architecture.
+
+# Final Changelog
+
+Unfortunately, all my commits deleted because files was too large. I've used local git and pushed project on last time and can't push because of large files from dataset and I was forced to git reset, I'm not push from first day because anyone can see my solution public. 
+When I solve this solution, I'm not readed existing solutions, only things I've read it's papers how to other guys evaluate memory systems. If I had extra 1 day, I'll invest this time for picking model from hugging face for embedding. After submiting my solution, I'll go to read popular solution and review their architecture, but in current solution I'm tried to simulate task where we working on environment where no one solved problem and we are all on the same page trying to find the solution.
+I believe in this solution with .md because it's more understandable and easier to predict for AI agents. And for this case I would stay on .md + vector search based on ## cutting. If I had more time I think I would test smart text cutting and play with function calls(hybrid approach) for this task.
