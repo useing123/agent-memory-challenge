@@ -1,0 +1,21 @@
+services:
+  memory-service:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./scripts/.env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    volumes:
+      - memory-data:/app/data
+
+volumes:
+  memory-data:
