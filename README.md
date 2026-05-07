@@ -1,207 +1,85 @@
-# Memory Service
+# Alpha-Stage Memory Service (v1.2.1)
 
-A Dockerized memory service for AI agents that persists conversation turns and provides recall capabilities.
+This repository contains a functional, Dockerized memory service for an AI agent. This is an **alpha version** submitted to demonstrate the core concepts, identify key challenges, and propose a robust, production-ready architecture.
+
+The service correctly ingests conversational data, extracts structured facts, and performs semantic recall. However, several critical bugs and performance bottlenecks were identified during development (and documented in the `CHANGELOG.md`). The proposed final architecture, which addresses these issues, is detailed in `ARCHITECTURE.md`.
 
 ## Quick Start
 
+### 1. Configure Environment
+Create a `.env` file from the example and add your Azure OpenAI credentials. This is required for fact extraction and embedding.
 ```bash
-# Build and start
-docker compose up -d
-
-# Wait for health
-until curl -sf http://localhost:8080/health; do sleep 1; done
-
-# Run evaluation tests
-python3 scripts/run_eval.py
+cp .env.example .env
+# Now, edit .env with your Azure keys and endpoint
 ```
 
-## Project Structure
-
-```
-memory-service/
-├── src/
-│   ├── main.py          # FastAPI app, all 7 endpoints
-│   └── models.py        # Pydantic models for request/response
-├── scripts/
-│   ├── run_eval.py      # Run 500 tests from fixtures
-│   ├── generate_tests.py # Generate tests via LLM (not used)
-│   └── download_dataset.py # Download LongMemEval
-├── fixtures/
-│   ├── eval_tests.json  # 500 test cases (LongMemEval)
-│   └── test_data.json   # Manual test fixtures
-├── tests/
-│   └── test_contract.py # Contract tests (health, turns, recall, etc.)
-├── Dockerfile           # Python 3.11 container
-├── docker-compose.yml   # Runs on port 8080
-├── .env.example         # Azure OpenAI keys (if needed)
-├── CHANGELOG.md         # Iteration history
-└── README.md            # This file
-```
-
-## What We've Built
-
-### Current Status (v0.3.0)
-
-| Component | Status |
-|-----------|--------|
-| All 7 HTTP endpoints | ✅ Working |
-| Docker + volume | ✅ Working |
-| Health check | ✅ Working |
-| Evaluation fixtures | ✅ 500 tests |
-| Extraction (LLM) | ❌ Not implemented |
-| Fact storage | ❌ Not implemented |
-| Recall with facts | ❌ Returns empty |
-
-### Test Results
-
-```
-First 50 tests: 0% passed
-Reason: No extraction — recall returns empty context
-```
-
-This is expected. The skeleton is working (endpoints respond correctly), but without extraction logic, there's no data to recall.
-
----
-
-## Architecture (Planned)
-
-```
-POST /turns
-    │
-    ├─→ Save turn to storage
-    │
-    └─→ LLM extraction → Store facts
-         │
-         ├─ type: fact|preference|opinion|event
-         ├─ key: employment|location|pet|...
-         └─ value: "Berlin"|"Google"|"Biscuit"|...
-         
-
-POST /recall
-    │
-    ├─ Get user facts (active only)
-    ├─ Get recent session messages
-    ├─ Format context within max_tokens
-    └─ Return {context, citations}
-```
-
-### Storage Schema (planned)
-
-```sql
-turns: id, session_id, user_id, messages, timestamp, metadata
-facts: id, turn_id, user_id, type, key, value, content, confidence, active, created_at
-```
-
----
-
-## Endpoints
-
-| Endpoint | Description | Current |
-|----------|-------------|---------|
-| `GET /health` | Liveness probe | ✅ |
-| `POST /turns` | Store turn + extract facts | ⚠️ Stores only |
-| `POST /recall` | Get context for agent | ⚠️ Returns empty |
-| `POST /search` | Explicit search | ⚠️ Returns empty |
-| `GET /users/{user_id}/memories` | List all memories | ⚠️ Returns empty |
-| `DELETE /sessions/{session_id}` | Delete session | ✅ |
-| `DELETE /users/{user_id}` | Delete user | ✅ |
-
----
-
-## Configuration
-
-### Environment Variables
-
+### 2. Build and Run with Docker
+This command builds the Docker image and runs the service in the background, passing your environment variables securely.
 ```bash
-# Azure OpenAI (for extraction) - optional
-AZURE_OPENAI_ENDPOINT=https://...openai.azure.com/
-AZURE_OPENAI_KEY=...
-AZURE_DEPLOYMENT_NAME=gpt-oss-120b
-
-# Optional: Auth token
-MEMORY_AUTH_TOKEN=
+docker build -t memory-service:latest .
+docker run -d -p 8080:8080 --name memory-service --env-file .env memory-service:latest
 ```
 
-### Fallback Strategy
+### 3. Setup Data
+The evaluation relies on the `LongMemEval` dataset. A processing script is included to download and prepare the necessary files.
+```bash
+python3 process_longmemeval.py
+```
+This will download the raw dataset (277MB) into `data/` and create processed `longmemeval_*.json` files for the evaluation script.
 
-If no LLM key provided:
-- Option 1: Save raw messages as facts (simple fallback)
-- Option 2: Use local embeddings (sentence-transformers)
-- Option 3: Rule-based extraction (regex patterns)
+### 4. Run Evaluation
+Use the dedicated evaluation script to test the agent's memory performance against the `LongMemEval` benchmark.
+```bash
+# Run 10 tests from all categories in isolated mode (recommended)
+python3 run_eval_new.py --all 10 --test -v
 
----
+# Run 50 tests for a specific category
+python3 run_eval_new.py fact_extraction 50 --test -v
+```
+
+## Architecture & Design (Alpha Version)
+
+The current implementation uses a straightforward but flawed architecture, which is detailed in the `ARCHITECTURE.md` file.
+
+*   **Backing Store:** SQLite. Chosen for its simplicity, zero-config setup, and because it's sufficient for the scale of this project. The database file is persisted via a Docker volume.
+*   **Extraction Pipeline:** On every `POST /turns`, the service makes 1-2 calls to an Azure OpenAI model (`gpt-4o-mini` by default) to extract structured facts (`{key, value, type}`) from the conversation.
+*   **Recall Strategy (Alpha):**
+    1.  **MD Document Generation:** All extracted facts for a user are compiled into a single Markdown document.
+    2.  **Chunking & Embedding:** This document is split into chunks by section headers. On every update, all chunks are deleted and re-embedded using Azure's `text-embedding-3-large`. **This is the primary performance bottleneck.**
+    3.  **Semantic Search:** On `POST /recall`, the service performs a cosine similarity search over the embedded chunks to find the top-k most relevant pieces of context.
+
+## Identified Issues & Future Architecture
+
+This alpha implementation suffers from several critical issues:
+1.  **Major Performance Bottleneck:** Re-embedding the entire user history on every single turn is extremely slow and expensive.
+2.  **Sub-Optimal Recall:** The "vanilla cosine-top-k" recall strategy is explicitly discouraged in the project brief and will not perform well on multi-hop or keyword-sensitive queries.
+3.  **Lack of Context Budgeting:** The strict priority logic for assembling context under a token budget is not yet implemented.
+
+A robust, production-ready architecture is proposed in `ARCHITECTURE.md` and documented in the `CHANGELOG.md`. This future plan includes **hybrid search (BM25 + Semantic), Reciprocal Rank Fusion (RRF), and an LLM reranker** to meet the "Excellent" criteria outlined in the project brief.
 
 ## Running Tests
 
-### Contract Tests
-
+### Local Pytest
+You can run the suite of unit and integration tests locally.
 ```bash
-python3 -m pytest tests/test_contract.py -v
+python3 -m pytest -v
 ```
 
-### Evaluation Tests
+### Evaluation Script
+The primary evaluation tool is `run_eval_new.py`, which tests against the `LongMemEval` dataset.
 
+**Modes:**
+*   **Isolated Mode (`--test`):** **Recommended.** Creates a unique user for each test case and cleans up afterward. This prevents memory contamination between tests.
+*   **Shared Mode (no flag):** Uses the same `user-id` for all tests, simulating one long-running conversation.
+
+**Commands:**
 ```bash
-# Run first 50 tests
-python3 scripts/run_eval.py
+# Run 10 tests from all categories in isolated mode with verbose output
+python3 run_eval_new.py --all 10 --test -v
 
-# Run all 500
-# (edit scripts/run_eval.py to change limit)
+# Run all 50 tests from the 'fact_extraction' category in isolated mode
+python3 run_eval_new.py fact_extraction 50 --test
+
+# Run all tests using a different data file
+python3 run_eval_new.py --all 100 --test --data data/longmemeval_100.json
 ```
-
-### Smoke Test (from task.md)
-
-```bash
-curl -s http://localhost:8080/health
-# {"status":"ok"}
-
-curl -X POST http://localhost:8080/turns \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "session_id": "smoke-1",
-    "user_id": "user-1",
-    "messages": [
-      {"role": "user", "content": "I just moved to Berlin from NYC last month."},
-      {"role": "assistant", "content": "That sounds exciting!"}
-    ],
-    "timestamp": "2025-03-15T10:30:00Z",
-    "metadata": {}
-  }'
-
-curl -X POST http://localhost:8080/recall \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "query": "Where does this user live?",
-    "session_id": "smoke-2",
-    "user_id": "user-1",
-    "max_tokens": 512
-  }'
-# Expected: context contains "Berlin"
-```
-
----
-
-## What's Next
-
-1. **Extraction** — LLM extraction from turns → structured facts
-2. **Fact storage** — SQLite with proper schema
-3. **Recall logic** — Format facts + session messages within token budget
-4. **Fact evolution** — Handle contradictions (new fact supersedes old)
-5. **Smart retrieval** — Hybrid (embeddings + BM25) instead of simple
-
-See CHANGELOG.md for iteration history.
-
----
-
-## Test Dataset
-
-We use **LongMemEval** (ICLR 2025) — 500 memory evaluation questions:
-
-| Category | Count |
-|----------|-------|
-| fact_extraction | 259 |
-| multi_hop | 133 |
-| fact_evolution | 78 |
-| preferences_opinions | 30 |
-
-Each test has: chat history (turn), recall query, expected answer.

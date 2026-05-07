@@ -36,7 +36,7 @@ def run_test(test):
         
         # POST recall
         query = test["recall_queries"][0]["query"] if test.get("recall_queries") else test.get("question", "")
-        expected = test.get("expected_answer", "")
+        expected = str(test.get("expected_answer", ""))
         
         recall_req = {
             "query": query,
@@ -53,7 +53,7 @@ def run_test(test):
         context = result.get("context", "")
         
         # Check if expected answer is in context
-        found = expected.lower() in context.lower()
+        found = expected.lower() in context.lower() if expected and context else False
         
         return {
             "found": found,
@@ -65,8 +65,12 @@ def run_test(test):
         return {"error": str(e)}
 
 def main():
-    # Load fixtures
-    with open("fixtures/eval_tests.json") as f:
+    import sys
+    use_full = "--full" in sys.argv
+    
+    # Load fixtures - mini by default
+    fixture_file = "fixtures/eval_tests.json" if use_full else "fixtures/eval_tests_mini.json"
+    with open(fixture_file) as f:
         data = json.load(f)
     
     tests = data["tests"]
@@ -85,8 +89,9 @@ def main():
     }
     
     sample_errors = []
+    total = len(tests)
     
-    for i, test in enumerate(tests[:50]):
+    for i, test in enumerate(tests):
         cat = test.get("category", "unknown")
         result = run_test(test)
         
@@ -101,14 +106,14 @@ def main():
             if len(sample_errors) < 3:
                 sample_errors.append(f"  [{cat}] expected: {result['expected']}, got: {result['context_preview']}")
         
-        if (i + 1) % 10 == 0:
-            print(f"Progress: {i+1}/50")
+        if (i + 1) % 20 == 0:
+            print(f"Progress: {i+1}/{total}")
     
-    print(f"\n=== Results (first 50 tests) ===")
+    print(f"\n=== Results ({total} tests) ===")
     print(f"Passed:  {results['passed']}")
     print(f"Failed:  {results['failed']}")
     print(f"Errors:  {results['errors']}")
-    print(f"\nSuccess rate: {results['passed']/50*100:.1f}%")
+    print(f"\nSuccess rate: {results['passed']/total*100:.1f}%")
     
     if sample_errors:
         print(f"\nSample issues:")
