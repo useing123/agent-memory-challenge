@@ -124,6 +124,76 @@ The service conforms to the 7 required endpoints:
 
 For detailed information, please see the project specification.
 
+## Architectural Principles
+
+This system is built around several core principles:
+
+1. Memory should be semantically structured, not raw chat logs.
+2. Memory retrieval must balance semantic similarity and keyword precision.
+3. User memory is temporal and evolving, not static.
+4. Memory representations should remain interpretable both for humans and LLMs.
+5. Retrieval quality is more important than raw storage volume.
+6. Memory systems should optimize for incremental updates and bounded latency.
+
+## Why Markdown-Based Memory
+
+Instead of storing isolated vectorized facts, the system maintains a living Markdown profile for each user.
+
+Advantages of this approach:
+- preserves semantic locality between related facts
+- improves chunk coherence for embeddings
+- naturally represents temporal evolution
+- easier for LLM reasoning than isolated KV memories
+- human-readable and debuggable
+- enables hierarchical retrieval by sections
+
+The Markdown profile acts as a semantic intermediate representation between structured memory extraction and vector retrieval.
+
+## Current Tradeoffs
+
+The current alpha implementation prioritizes:
+- synchronous consistency
+- deterministic updates
+- architectural simplicity
+
+over:
+- write throughput
+- embedding efficiency
+- large-scale concurrent ingestion
+
+The production architecture described in `ARCHITECTURE.md`
+addresses these limitations with incremental embeddings,
+hybrid retrieval, and reranking pipelines.
+
+## Memory Taxonomy
+
+The architecture distinguishes between several memory categories:
+
+- Stable Identity (location, employment, relationships)
+- Temporal State (current projects, ongoing tasks)
+- Episodic Events (specific conversations or events)
+- Long-term Preferences (tools, workflows, tastes)
+- Behavioral Patterns (repeated habits inferred over time)
+
+Different memory types require different update,
+retention, and retrieval strategies.
+
+## Production Roadmap
+
+Future iterations of the system would introduce:
+
+- incremental embedding updates
+- hybrid BM25 + vector retrieval
+- Reciprocal Rank Fusion (RRF)
+- LLM-based reranking
+- temporal memory reasoning
+- memory consolidation workers
+- hot/cold memory tiers
+- pgvector or distributed vector storage
+
 ## Limitations & Future Work
 
 The current "eager embedding" architecture, while correct, has a significant performance bottleneck on the write path (`/turns`). As documented in `ARCHITECTURE.md`, a production-ready version of this service would move to an **incremental embedding** model with a more sophisticated **hybrid recall strategy** (BM25 + semantic search + reranking) to achieve superior performance and recall quality.
+The central architectural idea is that long-term agent memory
+should remain semantically structured, incrementally maintainable,
+and interpretable both by humans and language models.
